@@ -630,6 +630,64 @@ impl<N, I: SpIndex, Iptr: SpIndex> CsMatI<N, I, Iptr> {
         }
     }
 
+    pub fn from_presorted<It>(
+        storage: CompressedStorage,
+        shape: Shape,
+        iter: It,
+        size_hint: Iptr,
+    ) -> Result<Self, SprsError>
+    where
+        N: Num + Copy,
+        It: Iterator<Item = (N, (I, I))>,
+    {
+        let _ = (I::from_usize(shape.0), I::from_usize(shape.1));
+        let outer_dim = outer_dimension(storage, shape.0, shape.1);
+        let size_hint = size_hint.index();
+
+        let mut indptr = Vec::with_capacity(outer_dim + 1);
+        indptr.push(Iptr::zero());
+        let mut indices = Vec::with_capacity(size_hint);
+        let mut data = Vec::with_capacity(size_hint);
+
+        let mut p_i: I = I::zero();
+        let mut p_j: I = I::zero();
+        for (v, (i, j)) in iter {
+            if v != N::zero() {
+                if i != p_i {
+                    if i < p_i {
+                        panic!(
+                            "1 i: {:?} j: {:?} - p_i: {:?} p_j: {:?}",
+                            i, j, p_i, p_j
+                        );
+                    }
+                    if j < I::zero() {
+                        panic!(
+                            "2 i: {:?} j: {:?} - p_i: {:?} p_j: {:?}",
+                            i, j, p_i, p_j
+                        );
+                    }
+                    indptr.resize(
+                        i.index_unchecked() + 1,
+                        Iptr::from_usize_unchecked(indices.len()),
+                    );
+                    p_i = i;
+                } else if j > I::zero() && j <= p_j {
+                    panic!(
+                        "3 i: {:?} j: {:?} - p_i: {:?} p_j: {:?}",
+                        i, j, p_i, p_j
+                    );
+                }
+                indices.push(j);
+                data.push(v);
+                p_j = j;
+            }
+        }
+
+        indptr.resize(outer_dim + 1, Iptr::from_usize_unchecked(indices.len()));
+
+        Ok(Self::new_trusted(storage, shape, indptr, indices, data))
+    }
+
     /// Create a CSR matrix from a dense matrix, ignoring elements lower than `epsilon`.
     ///
     /// If epsilon is negative, it will be clamped to zero.
@@ -802,6 +860,125 @@ impl<N, I: SpIndex, Iptr: SpIndex> CsMatI<N, I, Iptr> {
             CSR => self.ncols = inner_dims,
             CSC => self.nrows = inner_dims,
         }
+    }
+}
+
+impl<N, I: SpIndex, Iptr: SpIndex> CsMatIBuilder<N, I, Iptr>
+where
+    N: Num + Copy,
+{
+    pub fn presorted_builder(
+        storage: CompressedStorage,
+        shape: Shape,
+        size_hint: Iptr,
+    ) -> Result<CsMatIBuilder<N, I, Iptr>, SprsError> {
+        let _ = (I::from_usize(shape.0), I::from_usize(shape.1));
+        let size_hint = size_hint.index();
+        let outer_dim = outer_dimension(storage, shape.0, shape.1);
+
+        let mut indptr = Vec::with_capacity(outer_dim + 1);
+        indptr.push(Iptr::zero());
+        let indices = Vec::with_capacity(size_hint);
+        let data = Vec::with_capacity(size_hint);
+
+        let m = CsMatI {
+            storage,
+            nrows: shape.0,
+            ncols: shape.1,
+            indptr,
+            indices,
+            data,
+        };
+        Ok(CsMatIBuilder {
+            m,
+            p_i: I::zero(),
+            p_j: I::zero(),
+        })
+    }
+
+    pub fn reserve(&mut self, additional: usize) {
+        let _ = Iptr::from_usize(additional + self.m.indices.capacity());
+        self.m.indices.reserve(additional);
+        self.m.data.reserve(additional);
+    }
+
+    pub fn nnz(&self) -> usize {
+        self.m.indices.len()
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.m.indices.capacity()
+    }
+
+    pub fn add(&mut self, i: I, j: I, v: N) {
+        if v != N::zero() {
+            if i != self.p_i {
+                if i < self.p_i {
+                    panic!(
+                        "1 i: {:?} j: {:?} - p_i: {:?} p_j: {:?}",
+                        i, j, self.p_i, self.p_j
+                    );
+                }
+                if j < I::zero() {
+                    panic!(
+                        "2 i: {:?} j: {:?} - p_i: {:?} p_j: {:?}",
+                        i, j, self.p_i, self.p_j
+                    );
+                }
+                self.m.indptr.resize(
+                    i.index_unchecked() + 1,
+                    Iptr::from_usize_unchecked(self.m.indices.len()),
+                );
+                self.p_i = i;
+            } else if j <= self.p_j && self.p_j != I::zero() {
+                panic!(
+                    "3 i: {:?} j: {:?} - p_i: {:?} p_j: {:?}",
+                    i, j, self.p_i, self.p_j
+                );
+            }
+
+            self.m.indices.push(j);
+            self.m.data.push(v);
+            self.p_j = j;
+        }
+    }
+
+    pub fn add_outer(&mut self, i: I, vs: &[N]) {
+        if i < self.p_i {
+            panic!(
+                "add_outer: i: {:?} - p_i: {:?} p_j: {:?}",
+                i, self.p_i, self.p_j
+            );
+        }
+        if self.m.inner_dims() != vs.len() {
+            panic!("wrong inner_dim {} != {}", self.m.inner_dims(), vs.len());
+        }
+        self.m.indptr.resize(
+            i.index_unchecked() + 1,
+            Iptr::from_usize_unchecked(self.m.indices.len()),
+        );
+        self.p_i = i;
+        for (j, &v) in vs.iter().enumerate() {
+            if v != N::zero() {
+                let j = I::from_usize_unchecked(j);
+                self.m.indices.push(j);
+                self.m.data.push(v);
+                self.p_j = j;
+            }
+        }
+    }
+
+    pub fn build(mut self, shrink_to_fit: bool) -> CsMatI<N, I, Iptr> {
+        self.m.indptr.resize(
+            self.m.outer_dims() + 1,
+            Iptr::from_usize_unchecked(self.m.indices.len()),
+        );
+
+        if shrink_to_fit {
+            self.m.indices.shrink_to_fit();
+            self.m.data.shrink_to_fit();
+        }
+        self.m
     }
 }
 
@@ -2552,6 +2729,45 @@ mod test {
             CsMatView::new_view(CSR, (3, 3), indptr_fail3, indices_ok, data_ok),
             Err(SprsError::UnsortedIndptr)
         );
+    }
+
+    #[test]
+    fn test_from_presorted_matches_new() {
+        let data = vec![(1, (0, 1)), (1, (0, 3)), (1, (1, 2))];
+        let r_m = CsMatI::from_presorted(CSR, (3, 4), data.into_iter(), 3);
+        assert!(r_m.is_ok());
+        let m = r_m.unwrap();
+        let result = CsMatView::new_view(
+            m.storage,
+            m.shape(),
+            &m.indptr,
+            &m.indices,
+            &m.data,
+        );
+        assert!(result.is_ok());
+        assert_eq!(m.view(), result.unwrap());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_from_presorted_i_out_of_order() {
+        let data = vec![
+            (1, (0, 1)),
+            (1, (1, 2)),
+            (1, (0, 3)), // out of order
+        ];
+        let _ = CsMatI::from_presorted(CSC, (3, 4), data.into_iter(), 3);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_from_presorted_j_out_of_order() {
+        let data = vec![
+            (1, (0, 3)),
+            (1, (0, 1)), // out of order
+            (1, (1, 2)),
+        ];
+        let _ = CsMatI::from_presorted(CSC, (3, 4), data.into_iter(), 3);
     }
 
     #[test]

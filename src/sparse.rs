@@ -107,6 +107,16 @@ pub type CsMatViewMutI<'a, N, I, Iptr = I> =
 pub type CsMatVecView_<'a, N, I, Iptr = I> =
     CsMatBase<N, I, Array2<Iptr>, &'a [I], &'a [N], Iptr>;
 
+pub struct CsMatIBuilder<N, I, Iptr = I>
+where
+    I: SpIndex,
+    Iptr: SpIndex,
+{
+    m: CsMatI<N, I, Iptr>,
+    p_i: I,
+    p_j: I,
+}
+
 pub type CsMat<N> = CsMatI<N, usize>;
 pub type CsMatView<'a, N> = CsMatViewI<'a, N, usize>;
 pub type CsMatViewMut<'a, N> = CsMatViewMutI<'a, N, usize>;
@@ -242,12 +252,12 @@ pub struct TriMatIter<RI, CI, DI> {
 
 mod prelude {
     pub use super::{
-        CsMat, CsMatBase, CsMatI, CsMatVecView, CsMatVecView_, CsMatView,
-        CsMatViewI, CsMatViewMut, CsMatViewMutI, CsStructure, CsStructureI,
-        CsStructureView, CsStructureViewI, CsVec, CsVecBase, CsVecI, CsVecView,
-        CsVecViewI, CsVecViewMut, CsVecViewMutI, SparseMat, TriMat, TriMatBase,
-        TriMatI, TriMatIter, TriMatView, TriMatViewI, TriMatViewMut,
-        TriMatViewMutI,
+        CsMat, CsMatBase, CsMatI, CsMatIBuilder, CsMatVecView, CsMatVecView_,
+        CsMatView, CsMatViewI, CsMatViewMut, CsMatViewMutI, CsStructure,
+        CsStructureI, CsStructureView, CsStructureViewI, CsVec, CsVecBase,
+        CsVecI, CsVecView, CsVecViewI, CsVecViewMut, CsVecViewMutI, SparseMat,
+        TriMat, TriMatBase, TriMatI, TriMatIter, TriMatView, TriMatViewI,
+        TriMatViewMut, TriMatViewMutI,
     };
 }
 
