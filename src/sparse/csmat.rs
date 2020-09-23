@@ -46,12 +46,28 @@ pub enum CompressedStorage {
     CSC,
 }
 
+pub use self::CompressedStorage::{CSC, CSR};
+
 impl CompressedStorage {
     /// Get the other storage, ie return CSC if we were CSR, and vice versa
     pub fn other_storage(self) -> CompressedStorage {
         match self {
             CSR => CSC,
             CSC => CSR,
+        }
+    }
+
+    pub fn outer_dimension(&self, rows: usize, cols: usize) -> usize {
+        match self {
+            CSR => rows,
+            CSC => cols,
+        }
+    }
+
+    pub fn inner_dimension(&self, rows: usize, cols: usize) -> usize {
+        match self {
+            CSR => cols,
+            CSC => rows,
         }
     }
 }
@@ -61,10 +77,7 @@ pub fn outer_dimension(
     rows: usize,
     cols: usize,
 ) -> usize {
-    match storage {
-        CSR => rows,
-        CSC => cols,
-    }
+    storage.outer_dimension(rows, cols)
 }
 
 pub fn inner_dimension(
@@ -72,13 +85,8 @@ pub fn inner_dimension(
     rows: usize,
     cols: usize,
 ) -> usize {
-    match storage {
-        CSR => cols,
-        CSC => rows,
-    }
+    storage.inner_dimension(rows, cols)
 }
-
-pub use self::CompressedStorage::{CSC, CSR};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 /// Hold the index of a non-zero element in the compressed storage
