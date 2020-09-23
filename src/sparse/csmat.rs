@@ -605,7 +605,7 @@ impl<N, I: SpIndex, Iptr: SpIndex> CsMatI<N, I, Iptr> {
         Self::try_new_csc(shape, indptr, indices, data).unwrap()
     }
 
-    pub(crate) fn new_trusted(
+    pub fn new_trusted(
         storage: CompressedStorage,
         shape: Shape,
         indptr: Vec<Iptr>,
